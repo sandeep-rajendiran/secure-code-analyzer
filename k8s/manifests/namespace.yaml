@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-code-analyzer
+  labels:
+    name: secure-code-analyzer
+    app: secure-code-analyzer
+    version: "1.0.0"
+    managed-by: "secure-code-analyzer"
+    security-scan: "enabled"
+  annotations:
+    description: "DevSecOps Integration Platform - Secure Code Analyzer"
+    contact: "devsecops-team@company.com"
+    security.policy: "strict"
+    network.policy: "enabled"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: secure-code-analyzer-quota
+  namespace: secure-code-analyzer
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    pods: "20"
+    services: "10"
+    persistentvolumeclaims: "5"
+    configmaps: "20"
+    secrets: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: secure-code-analyzer-limits
+  namespace: secure-code-analyzer
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 1Gi
+    defaultRequest:
+      cpu: 100m
+      memory: 256Mi
+    type: Container
+  - max:
+      cpu: 2
+      memory: 4Gi
+    min:
+      cpu: 50m
+      memory: 128Mi
+    type: Container
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secure-code-analyzer-network-policy
+  namespace: secure-code-analyzer
+spec:
+  podSelector:
+    matchLabels:
+      app: secure-code-analyzer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: secure-code-analyzer
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 9000
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  - to:
+    - podSelector:
+        matchLabels:
+          app: secure-code-analyzer
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: secure-code-analyzer
+  namespace: secure-code-analyzer
+  annotations:
+    description: "Service account for Secure Code Analyzer components"
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: secure-code-analyzer
+  name: secure-code-analyzer-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions", "networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: secure-code-analyzer-rolebinding
+  namespace: secure-code-analyzer
+subjects:
+- kind: ServiceAccount
+  name: secure-code-analyzer
+  namespace: secure-code-analyzer
+roleRef:
+  kind: Role
+  name: secure-code-analyzer-role
+  apiGroup: rbac.authorization.k8s.io

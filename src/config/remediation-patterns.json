@@ -1,0 +1,280 @@
+{
+  "express-security-headers": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Add security headers to Express.js application",
+    "patterns": [
+      {
+        "match": "app\\s*=\\s*express\\s*\\(\\s*\\)",
+        "replace": "app = express();\n\n// Security headers\napp.use((req, res, next) => {\n  res.setHeader('X-Frame-Options', 'SAMEORIGIN');\n  res.setHeader('X-Content-Type-Options', 'nosniff');\n  res.setHeader('X-XSS-Protection', '1; mode=block');\n  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');\n  next();\n});",
+        "explanation": "Add essential security headers to prevent common attacks"
+      }
+    ],
+    "examples": [
+      {
+        "before": "const app = express();",
+        "after": "const app = express();\n\n// Security headers middleware\napp.use(helmet());",
+        "explanation": "Use Helmet.js or manual headers to improve security posture"
+      }
+    ]
+  },
+  
+  "jwt-secret-validation": {
+    "type": "security",
+    "severity": "high",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Validate JWT secret strength and source",
+    "patterns": [
+      {
+        "match": "jwt\\.sign\\s*\\([^,]+,\\s*['\"][^'\"]{1,16}['\"]",
+        "replace": "jwt.sign($1, process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex')",
+        "explanation": "Use strong JWT secrets from environment variables"
+      }
+    ],
+    "examples": [
+      {
+        "before": "jwt.sign(payload, 'secret123')",
+        "after": "jwt.sign(payload, process.env.JWT_SECRET)",
+        "explanation": "Always use cryptographically strong secrets stored securely"
+      }
+    ]
+  },
+  
+  "mongoose-injection": {
+    "type": "security",
+    "severity": "high",
+    "autoFixable": true,
+    "riskLevel": "medium",
+    "description": "Prevent NoSQL injection in Mongoose queries",
+    "patterns": [
+      {
+        "match": "User\\.find\\s*\\(\\s*req\\.(body|params|query)",
+        "replace": "User.find(sanitizeObject($1))",
+        "explanation": "Sanitize user input before using in MongoDB queries"
+      }
+    ],
+    "examples": [
+      {
+        "before": "User.find(req.body.query)",
+        "after": "User.find(sanitizeInput(req.body.query))",
+        "explanation": "Always sanitize user input to prevent NoSQL injection"
+      }
+    ]
+  },
+  
+  "cors-misconfiguration": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Fix CORS misconfiguration",
+    "patterns": [
+      {
+        "match": "cors\\s*\\(\\s*\\{[^}]*origin\\s*:\\s*['\"]\\*['\"][^}]*\\}\\s*\\)",
+        "replace": "cors({\n  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],\n  credentials: true,\n  optionsSuccessStatus: 200\n})",
+        "explanation": "Use specific origins instead of wildcard (*) for CORS"
+      }
+    ],
+    "examples": [
+      {
+        "before": "app.use(cors({ origin: '*' }));",
+        "after": "app.use(cors({ origin: ['https://mydomain.com', 'https://www.mydomain.com'] }));",
+        "explanation": "Specify allowed origins instead of allowing all with wildcard"
+      }
+    ]
+  },
+  
+  "error-information-disclosure": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Prevent information disclosure in error messages",
+    "patterns": [
+      {
+        "match": "res\\.status\\s*\\([^)]+\\)\\.json\\s*\\(\\s*\\{[^}]*error\\s*:[^}]*err[^}]*\\}\\s*\\)",
+        "replace": "res.status($1).json({\n  error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message\n})",
+        "explanation": "Sanitize error messages in production to prevent information disclosure"
+      }
+    ],
+    "examples": [
+      {
+        "before": "res.status(500).json({ error: err.message });",
+        "after": "res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message });",
+        "explanation": "Hide detailed error messages in production environments"
+      }
+    ]
+  },
+  
+  "bcrypt-sync-usage": {
+    "type": "security",
+    "severity": "low",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Replace synchronous bcrypt with async version",
+    "patterns": [
+      {
+        "match": "bcrypt\\.hashSync\\s*\\([^)]+\\)",
+        "replace": "await bcrypt.hash($1)",
+        "explanation": "Use async bcrypt methods to avoid blocking the event loop"
+      },
+      {
+        "match": "bcrypt\\.compareSync\\s*\\([^)]+\\)",
+        "replace": "await bcrypt.compare($1)",
+        "explanation": "Use async bcrypt compare to avoid blocking the event loop"
+      }
+    ],
+    "examples": [
+      {
+        "before": "const hashedPassword = bcrypt.hashSync(password, 10);",
+        "after": "const hashedPassword = await bcrypt.hash(password, 10);",
+        "explanation": "Use async bcrypt methods for better performance and non-blocking operation"
+      }
+    ]
+  },
+  
+  "express-rate-limiting": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Add rate limiting to Express endpoints",
+    "patterns": [
+      {
+        "match": "app\\.(post|put|delete)\\s*\\(['\"][^'\"]*(?:login|register|auth|api)[^'\"]*['\"]",
+        "replace": "$&, rateLimiter,",
+        "explanation": "Add rate limiting to authentication and API endpoints"
+      }
+    ],
+    "examples": [
+      {
+        "before": "app.post('/api/login', loginController);",
+        "after": "app.post('/api/login', rateLimiter, loginController);",
+        "explanation": "Implement rate limiting on sensitive endpoints to prevent brute force attacks"
+      }
+    ]
+  },
+  
+  "session-security": {
+    "type": "security",
+    "severity": "high",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Improve session security configuration",
+    "patterns": [
+      {
+        "match": "session\\s*\\(\\s*\\{[^}]*\\}\\s*\\)",
+        "replace": "session({\n  secret: process.env.SESSION_SECRET,\n  resave: false,\n  saveUninitialized: false,\n  cookie: {\n    secure: process.env.NODE_ENV === 'production',\n    httpOnly: true,\n    maxAge: 24 * 60 * 60 * 1000 // 24 hours\n  }\n})",
+        "explanation": "Configure session middleware with secure defaults"
+      }
+    ],
+    "examples": [
+      {
+        "before": "app.use(session({ secret: 'mysecret' }));",
+        "after": "app.use(session({\n  secret: process.env.SESSION_SECRET,\n  resave: false,\n  saveUninitialized: false,\n  cookie: { secure: true, httpOnly: true, maxAge: 86400000 }\n}));",
+        "explanation": "Use secure session configuration with environment variables and proper cookie settings"
+      }
+    ]
+  },
+  
+  "dockerfile-security": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "low",
+    "description": "Improve Dockerfile security",
+    "patterns": [
+      {
+        "match": "FROM\\s+[^:]+$",
+        "replace": "$&:latest # TODO: Use specific version tag",
+        "explanation": "Always specify image versions instead of using latest"
+      },
+      {
+        "match": "RUN\\s+.*\\s+&&\\s+apt-get\\s+install",
+        "replace": "$& && rm -rf /var/lib/apt/lists/*",
+        "explanation": "Clean up package manager caches to reduce image size"
+      }
+    ],
+    "examples": [
+      {
+        "before": "FROM node",
+        "after": "FROM node:18-alpine",
+        "explanation": "Use specific, minimal base images for security and size optimization"
+      }
+    ]
+  },
+  
+  "kubernetes-security": {
+    "type": "security",
+    "severity": "high",
+    "autoFixable": true,
+    "riskLevel": "medium",
+    "description": "Improve Kubernetes deployment security",
+    "patterns": [
+      {
+        "match": "kind:\\s*Deployment[\\s\\S]*?containers:[\\s\\S]*?-\\s*name:",
+        "replace": "$&\n          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true\n            runAsNonRoot: true\n            runAsUser: 1001\n            capabilities:\n              drop:\n                - ALL",
+        "explanation": "Add security context to container specifications"
+      }
+    ],
+    "examples": [
+      {
+        "before": "containers:\n- name: app\n  image: myapp:latest",
+        "after": "containers:\n- name: app\n  image: myapp:latest\n  securityContext:\n    runAsNonRoot: true\n    readOnlyRootFilesystem: true",
+        "explanation": "Always configure security contexts for Kubernetes containers"
+      }
+    ]
+  },
+  
+  "input-validation-middleware": {
+    "type": "security",
+    "severity": "medium",
+    "autoFixable": true,
+    "riskLevel": "medium",
+    "description": "Add input validation middleware",
+    "patterns": [
+      {
+        "match": "app\\.(post|put|patch)\\s*\\(['\"][^'\"]*['\"]\\s*,\\s*(?!.*validate)([^,]+)\\s*\\)",
+        "replace": "app.$1($2, [\n  body('*').trim().escape(),\n  validateInput\n], $3)",
+        "explanation": "Add input validation middleware to API endpoints"
+      }
+    ],
+    "examples": [
+      {
+        "before": "app.post('/users', createUser);",
+        "after": "app.post('/users', [\n  body('email').isEmail().normalizeEmail(),\n  body('name').trim().isLength({min: 1, max: 100}),\n  validateInput\n], createUser);",
+        "explanation": "Always validate and sanitize input data before processing"
+      }
+    ]
+  },
+  
+  "sql-parameterization": {
+    "type": "security",
+    "severity": "critical",
+    "autoFixable": true,
+    "riskLevel": "medium",
+    "description": "Convert to parameterized SQL queries",
+    "patterns": [
+      {
+        "match": "db\\.query\\s*\\(\\s*[`'\"]([^`'\"]*?)\\$\\{([^}]+)\\}([^`'\"]*?)[`'\"]",
+        "replace": "db.query('$1?$3', [$2])",
+        "explanation": "Use parameterized queries to prevent SQL injection"
+      },
+      {
+        "match": "SELECT\\s+\\*\\s+FROM\\s+(\\w+)\\s+WHERE\\s+(\\w+)\\s*=\\s*['\"]?\\$\\{([^}]+)\\}['\"]?",
+        "replace": "SELECT * FROM $1 WHERE $2 = ?', [$3]",
+        "explanation": "Replace string interpolation with parameter binding"
+      }
+    ],
+    "examples": [
+      {
+        "before": "db.query(`SELECT * FROM users WHERE id = ${userId}`);",
+        "after": "db.query('SELECT * FROM users WHERE id = ?', [userId]);",
+        "explanation": "Always use parameterized queries for database operations"
+      }
+    ]
+  }
+}

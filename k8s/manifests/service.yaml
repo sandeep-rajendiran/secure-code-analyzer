@@ -1,0 +1,264 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-code-analyzer-service
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: api
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: secure-code-analyzer
+    component: api
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy-service
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: proxy
+spec:
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+  selector:
+    app: secure-code-analyzer
+    component: proxy
+  loadBalancerSourceRanges:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-scanner-service
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: scanner
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: secure-code-analyzer
+    component: scanner
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-service
+  namespace: secure-code-analyzer
+  labels:
+    app: postgresql
+    component: database
+spec:
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+  selector:
+    app: postgresql
+    component: database
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: secure-code-analyzer
+  labels:
+    app: redis
+    component: cache
+spec:
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  selector:
+    app: redis
+    component: cache
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarqube-service
+  namespace: secure-code-analyzer
+  labels:
+    app: sonarqube
+    component: quality-gate
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 9000
+    targetPort: 9000
+    protocol: TCP
+  selector:
+    app: sonarqube
+    component: quality-gate
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-service
+  namespace: secure-code-analyzer
+  labels:
+    app: jenkins
+    component: ci-cd
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: jnlp
+    port: 50000
+    targetPort: 50000
+    protocol: TCP
+  selector:
+    app: jenkins
+    component: ci-cd
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secure-code-analyzer-ingress
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+spec:
+  tls:
+  - hosts:
+    - secure-code-analyzer.example.com
+    secretName: secure-code-analyzer-tls
+  rules:
+  - host: secure-code-analyzer.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-proxy-service
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: secure-code-analyzer-service
+            port:
+              number: 3000
+      - path: /socket.io
+        pathType: Prefix
+        backend:
+          service:
+            name: secure-code-analyzer-service
+            port:
+              number: 3000
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: secure-code-analyzer-service
+            port:
+              number: 3000
+      - path: /metrics
+        pathType: Exact
+        backend:
+          service:
+            name: secure-code-analyzer-service
+            port:
+              number: 8080
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: secure-code-analyzer-headless
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: api
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: secure-code-analyzer
+    component: api

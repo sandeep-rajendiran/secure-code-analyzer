@@ -1,0 +1,284 @@
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: secure-code-analyzer-psp
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    seccomp.security.alpha.kubernetes.io/defaultProfileName: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/defaultProfileName: 'runtime/default'
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  runAsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1001
+        max: 1001
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1001
+        max: 1001
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1001
+        max: 1001
+  readOnlyRootFilesystem: true
+  seLinux:
+    rule: RunAsAny
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: secure-code-analyzer-psp-use
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs: ['use']
+  resourceNames:
+  - secure-code-analyzer-psp
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: secure-code-analyzer-psp-use
+roleRef:
+  kind: ClusterRole
+  name: secure-code-analyzer-psp-use
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: secure-code-analyzer
+  namespace: secure-code-analyzer
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: secure-code-analyzer-netpol
+  namespace: secure-code-analyzer
+spec:
+  podSelector:
+    matchLabels:
+      app: secure-code-analyzer
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: secure-code-analyzer
+    ports:
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 9000
+  egress:
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: sonarqube
+    ports:
+    - protocol: TCP
+      port: 9000
+  - to:
+    - podSelector:
+        matchLabels:
+          app: jenkins
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 50000
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secure-code-analyzer-secrets
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+type: Opaque
+stringData:
+  # Database credentials
+  database-user: "secure_analyzer"
+  database-password: "change-in-production-123!"
+  
+  # JWT secret for authentication
+  jwt-secret: "super-secret-jwt-key-change-in-production"
+  
+  # SonarQube token
+  sonarqube-token: "squ_12345abcdef67890"
+  
+  # Jenkins API token
+  jenkins-token: "11a1b2c3d4e5f6789abcdef123456789"
+  
+  # API keys
+  github-token: "ghp_1234567890abcdef"
+  gitlab-token: "glpat-1234567890abcdef"
+  slack-webhook: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+  
+  # Encryption keys
+  encryption-key: "32-char-encryption-key-for-production"
+  
+  # External service credentials
+  smtp-user: "noreply@company.com"
+  smtp-password: "smtp-password-123"
+  
+  # Container registry credentials
+  registry-user: "registry-user"
+  registry-password: "registry-password-123"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tls-secret
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+type: kubernetes.io/tls
+data:
+  # Self-signed certificate for development
+  # In production, use proper certificates from cert-manager or your CA
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUNuakNDQVlZQ0NRQzFzRzU5WUtOc0F6QU5CZ2txaGtpRzl3MEJBUXNGQURBUk1ROHdEUVlEVlFRRERBWnMKYjJOaGJHaHZjM1F3SGhjTk1qTXdNVEF4TURBMU1qVXdXaGNOTXpNd01UQTFNREE5TXpVd1dqQVJNUTh3RFFZRApWUVFEREFac2IyTmhiR2h2YzNRd2dnRWlNQTBHQ1NxR1NJYjNEUUVCQVFVQUE0SUJEd0F3Z2dFS0FvSUJBUUMK...
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2UUlCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktjd2dnU2pBZ0VBQW9JQkFRQzY5SHlkTG5PQWxpWkoKRGVxbDBpUUhKTFZpYUdCSmQxb21aMERrNG9wTUk1RGVrNU5rRDk2Zit1VXdnL04xWXlHWkN2UDZ3NVFXWXpCbgpVVjVkakVyREszY1pJRzFRUWFKU3FqYlByYmlLR0E3TmxLb1NCcCszemRsV3llUXArM3BVc2o0cWUrZWttOVFyCjZ3cXF5RVhQMmRqTEhQNnJ1ZG5FZjJHaGsyTkI4c0hQT2JlQWU2bzdxUUh4VkR1Sm5waEF3WmNNUkZ5WEJ1YjEKTGo4SUlHMEJQOGxEQWJ1akwwdGpZL3JDanhrOFNuc2hScCtqQnNnZ2J5SkVHUXlPd2F3ZCtmNWh2MFQvbUlvWQpNNE1pTGNIeGYzd1VQU3Ywc2pWakxnS3kvdUk4NUhyNjVKKzk2M0ZOWlA3N2VjRTRoUzQyOTdZNWhkNlZEaFNLCmRoVWZBZ01CQUFFd2dnU0VBZ0VBQW9JQkFHSVJlZUNLSHgrNXlVcU4rUXpkTzBib2I1ZlZaV3pONVlWMFZZeWoKVWlSWjdtUWFlSjRoNkMrRC9rSTRMM3Z0QWNCRk1KRHF0MTFyOTgveXR6bUhZWlNZc0hEbGRhTWFtN0dHKys4YQozelNCYlVhcTNPajRpYUJBN3dBdkFtczlwV2MyWUpVQ0kwbFVNQXIvbWJHMjFyVzJEd1dMTG82dm9HOFJiTU9yCjN4cUZqd3lyU2ZjekFLeHpiUzVlaFNnRnZ5V0VqRW5rUW05alc3TVBFeHJIS1pRKy9CK0dGZlZYNXJiU1Z6c3cKUEhRdXhqZ1Y0NzBNV0RzVXFmRmNBRkUxcmxtRGJGSGkyaXdTbEJFc0k4bUJHQkluVTVOTEhOQkNOWlBBNmdLdAprUUtvQ1djWlI2VHZldzF5TUNZSVMyTHVxRDl5ZFhZRGZlV1h5emxoQW9LTzd4ckNnWWtBNWRkR29lZjVHanByCnVxRzZvcXNwbnBJZ2RRK29sTTVxT1NHZ2ptU1ZaYkNSb3I5Q2VPc3lmeXlKclUxYlQ5ZDdPcTJmSWdDYWFsb2MKc2x6MGh0eDUxaHNHVW5PcmRGRG1qLzlsY085emVmaDNsUVNUU2hkMzl5SGJKTldJZ0ZzdmhWbVo1Nm1TbmVBcwpMODNXQ01NVVNQdUNyNGE0U3UzQnZzWmJPdlJDaUpzN09wWTYzRmE2eDFsWlYxZU01eTVNRmxqVkRKSjEyWWZHCmYxZkNwVmIzSkJGODZoSTZBSnVRSmhGMkFCNGVJMzdOMnBLVVFSRVExclRBaGJuVDJ5ajIzNDF3RGtRdFpHSXUKazdseVo1QnNsaDc5WUtScEJEZzI1c25FTHExTWVTWnNvdXNOVWNJd004V0dBWVNVVlFLQmdRRFdXQzZzM2Q4MApuNGNReUd4NEkyVzZzRDJDQWFFQ2k5RWp5WUhIaUxRWTc4T2pxNnhKZzE0bys4TERzV0h3Z2EwSzVIaEtPQzA2CjNCcElzZWxOQS9tNlhMN21wd2xFQ1VYdmhHdVh4eEQ4bEMrM3Y4Zk5WVU56QWRGNnNmTlJLOEprL2VjbCtRODAKQ0REWnpDZHdlV2VBcE5TaHgzMmt3TWZoa1dsSUVVVVFLQmdRRGF4TXdUbEVGS3NIbzJxYkJxczJqejd0SzEKaE1SMlB0cUkvY0JpdjdyU3hjU2NwYzBJS2JoN0lWaVZlMkE3ZnMvQUtCbVJlWHBiWHJrUHJrYUN1RERWT2hPVQpJQ29vdnI1UmdtejhhZVNVYnMzNnBZM2xNa0dIKzFHR0lLNVhjbVZKbkxRZTZ3VHJCNm5xQ3I2TnY3V3pJN2UzCnJmbXI2dklEcGJ0REVRSwpCZ1FEYTBRMjBnOEVLRkJOU1lWa3ZTVGxOQkJsRFFrcmJLdnBqUVBCdmV5WjR3OUUKK3NFWkJjRjNGOHVYV3RPQkxnQlRKRGhJV0FCYjQ5eW1Db1Nkcis4Q3M2ZmIxWTVBSXNxK3o0ZW9wcnZoSjlnawpScEM3OFFaYUp2Qk1WYmdlOWs1SkNiVGJlUzVEUmpvMU9Cd2VMVGZKa3JhNGNQcWlnZC9mNnlhOFl3dXRRUUsKQmdRQzlCOU9nRUF3dzRYNGJxQXB4Vm1Ldk9xd3BxVUN0VGV6VW5acldub3pFbWhPQ3pBdEFnZ1U2bGJSdXNjSAozcUJaT1g3dmdqSHVDeEhKeTh4VFF5N21uT0tFcWVma0IrZUhJU2FwOUtxOWh5cUR1dlM2amlvb2YxVU5rQTlYCm0yaFNmUlRoSXFPMkdWb1p1cWkyYzNIUHFnR25wOU82VEY2dDZZSjZ1U2VhOXpRUUtCZ0JJNnFVQUtLc0tYZE8KQUVOaEJRSkZVc0NWeEsyOEtPeHlMZlJlMVZLR0dqbld4TUxVOG1HbGJnNVJPZXNDQ2QzUmErNkFYSkNmWGoxSgpZaFlLMHVib05PYWJ2dGlzN0ROYjlwY1grMEJGdm8yMm9uRERGRXRDa2hKTzVQKy9qSnZTdGplQVQxdWF2YUV2CkhKNXdwVXhPS09oWWI4a0UrRVpGSXYwUlRXSGdBRW8wCi0tLS0tRU5EIFBSSVZBVEUgS0VZLS0tLS0K
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry-secret
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ewogICJhdXRocyI6IHsKICAgICJsb2NhbGhvc3Q6NTAwMCI6IHsKICAgICAgImF1dGgiOiAiY21WbmFYTjBjbms2Y21WbmFYTjBjbmswTVRJeiIKICAgIH0KICB9Cn0=
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: secure-code-analyzer-pdb
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: secure-code-analyzer
+      component: api
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx-proxy-pdb
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: proxy
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: secure-code-analyzer
+      component: proxy
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: container-resource-limits
+  namespace: secure-code-analyzer
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 2Gi
+    defaultRequest:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 512Mi
+    max:
+      cpu: 4
+      memory: 8Gi
+      ephemeral-storage: 20Gi
+    min:
+      cpu: 50m
+      memory: 128Mi
+      ephemeral-storage: 256Mi

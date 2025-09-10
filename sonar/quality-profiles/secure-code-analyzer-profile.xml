@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profile>
+  <name>Secure Code Analyzer - DevSecOps</name>
+  <language>js</language>
+  <rules>
+    <!-- Security Rules - High Priority -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2068</key>
+      <priority>BLOCKER</priority>
+      <parameters>
+        <parameter>
+          <key>secretWords</key>
+          <value>password,passwd,pwd,passphrase,secret,key,token,api_key,apikey,access_key,private_key,credential,auth</value>
+        </parameter>
+      </parameters>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S3649</key>
+      <priority>BLOCKER</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4507</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5247</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5122</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4818</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4426</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4423</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S3827</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2612</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Injection Prevention -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S3500</key>
+      <priority>BLOCKER</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2083</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2631</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Cross-Site Scripting (XSS) Prevention -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5247</key>
+      <priority>BLOCKER</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5257</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Authentication & Authorization -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4502</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4784</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5144</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Cryptography -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4426</key>
+      <priority>BLOCKER</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5542</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5547</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4790</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Input Validation -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5693</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2639</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <!-- Error Handling & Information Disclosure -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5757</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1192</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S3696</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Network Security -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4830</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5332</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4423</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Session Management -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2255</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5876</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <!-- Code Quality Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1541</key>
+      <priority>MAJOR</priority>
+      <parameters>
+        <parameter>
+          <key>threshold</key>
+          <value>15</value>
+        </parameter>
+      </parameters>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S3776</key>
+      <priority>MAJOR</priority>
+      <parameters>
+        <parameter>
+          <key>threshold</key>
+          <value>15</value>
+        </parameter>
+      </parameters>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S138</key>
+      <priority>MAJOR</priority>
+      <parameters>
+        <parameter>
+          <key>max</key>
+          <value>1000</value>
+        </parameter>
+      </parameters>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S104</key>
+      <priority>MAJOR</priority>
+      <parameters>
+        <parameter>
+          <key>maximumFunctionComplexityThreshold</key>
+          <value>20</value>
+        </parameter>
+      </parameters>
+    </rule>
+
+    <!-- Best Practices -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1116</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1481</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1854</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2301</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <!-- DevSecOps Specific Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S6353</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S6350</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S6299</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <!-- Express.js Security Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5689</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5739</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <!-- Node.js Security Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S4829</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5443</key>
+      <priority>CRITICAL</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5446</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <!-- Testing Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S2699</key>
+      <priority>MAJOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S5958</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <!-- Documentation Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1135</key>
+      <priority>INFO</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S1134</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <!-- Performance Rules -->
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S6582</key>
+      <priority>MINOR</priority>
+    </rule>
+
+    <rule>
+      <repositoryKey>javascript</repositoryKey>
+      <key>S6606</key>
+      <priority>MINOR</priority>
+    </rule>
+  </rules>
+</profile>

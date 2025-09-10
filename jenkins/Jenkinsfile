@@ -1,0 +1,503 @@
+#!/usr/bin/env groovy
+
+/**
+ * Jenkins Pipeline for Secure Code Analyzer
+ * DevSecOps Integration with Security Gates
+ */
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: node
+    image: node:18-alpine
+    command:
+    - sleep
+    args:
+    - 99d
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  - name: docker
+    image: docker:dind
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: docker-sock
+      mountPath: /var/run/docker.sock
+  - name: sonar
+    image: sonarsource/sonar-scanner-cli:latest
+    command:
+    - sleep
+    args:
+    - 99d
+  - name: security
+    image: securecodewarrior/docker-owasp-zap:stable
+    command:
+    - sleep
+    args:
+    - 99d
+  volumes:
+  - name: docker-sock
+    hostPath:
+      path: /var/run/docker.sock
+"""
+        }
+    }
+
+    environment {
+        DOCKER_IMAGE = "secure-code-analyzer"
+        SONAR_PROJECT_KEY = "secure-code-analyzer"
+        SECURITY_THRESHOLD = "HIGH"
+        KUBECONFIG = credentials('kubeconfig')
+        DOCKER_REGISTRY = "${env.DOCKER_REGISTRY ?: 'localhost:5000'}"
+        SLACK_WEBHOOK = credentials('slack-webhook')
+    }
+
+    parameters {
+        choice(
+            name: 'DEPLOYMENT_ENV',
+            choices: ['dev', 'staging', 'production'],
+            description: 'Target deployment environment'
+        )
+        booleanParam(
+            name: 'SKIP_SECURITY_SCAN',
+            defaultValue: false,
+            description: 'Skip security scanning (emergency deployments only)'
+        )
+        booleanParam(
+            name: 'FORCE_DEPLOY',
+            defaultValue: false,
+            description: 'Force deployment despite security issues'
+        )
+    }
+
+    stages {
+        stage('Checkout & Setup') {
+            steps {
+                container('node') {
+                    script {
+                        // Checkout code
+                        checkout scm
+                        
+                        // Install dependencies
+                        sh '''
+                            npm ci --only=production
+                            npm install --only=dev
+                        '''
+                        
+                        // Setup environment
+                        sh '''
+                            echo "NODE_ENV=${DEPLOYMENT_ENV}" > .env
+                            echo "BUILD_NUMBER=${BUILD_NUMBER}" >> .env
+                            echo "GIT_COMMIT=${GIT_COMMIT}" >> .env
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    script {
+                        notifySlack("🚀 Build started for ${env.BRANCH_NAME}", "info")
+                    }
+                }
+            }
+        }
+
+        stage('Code Quality & Linting') {
+            parallel {
+                stage('ESLint') {
+                    steps {
+                        container('node') {
+                            sh 'npm run lint'
+                        }
+                    }
+                    post {
+                        always {
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'reports',
+                                reportFiles: 'eslint-report.html',
+                                reportName: 'ESLint Report'
+                            ])
+                        }
+                    }
+                }
+                
+                stage('Security Linting') {
+                    steps {
+                        container('node') {
+                            sh '''
+                                npx eslint src/ --ext .js --format json --output-file reports/security-lint.json || true
+                                node scripts/security-lint-parser.js
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                container('node') {
+                    sh '''
+                        npm test -- --coverage --coverageReporters=text-lcov > coverage/lcov.info
+                        npm test -- --coverage --coverageReporters=json --coverageReporters=html
+                    '''
+                }
+            }
+            post {
+                always {
+                    publishTestResults testResultsPattern: 'coverage/junit.xml'
+                    publishCoverage adapters: [
+                        istanbulCoberturaAdapter('coverage/cobertura-coverage.xml')
+                    ], sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
+                }
+            }
+        }
+
+        stage('Security Analysis') {
+            when {
+                not { params.SKIP_SECURITY_SCAN }
+            }
+            parallel {
+                stage('Static Security Scan') {
+                    steps {
+                        container('node') {
+                            script {
+                                // Run built-in security analyzer
+                                sh '''
+                                    node src/scanners/security-scanner.js \
+                                        --target ./src \
+                                        --format json \
+                                        --output reports/security-analysis.json \
+                                        --severity ${SECURITY_THRESHOLD}
+                                '''
+                                
+                                // Parse results
+                                def securityReport = readJSON file: 'reports/security-analysis.json'
+                                env.SECURITY_ISSUES = securityReport.summary.totalIssues.toString()
+                                env.CRITICAL_ISSUES = securityReport.summary.critical.toString()
+                                env.HIGH_ISSUES = securityReport.summary.high.toString()
+                                
+                                if (securityReport.summary.critical > 0 && !params.FORCE_DEPLOY) {
+                                    error("Critical security issues found: ${securityReport.summary.critical}")
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Dependency Vulnerability Scan') {
+                    steps {
+                        container('node') {
+                            script {
+                                // NPM audit
+                                sh '''
+                                    npm audit --audit-level=high --json > reports/npm-audit.json || true
+                                    npx retire --outputformat json --outputpath reports/retire-scan.json || true
+                                '''
+                                
+                                // Snyk scan
+                                withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                                    sh '''
+                                        npx snyk test --json > reports/snyk-test.json || true
+                                        npx snyk monitor || true
+                                    '''
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('Container Security Scan') {
+                    when {
+                        anyOf {
+                            branch 'main'
+                            branch 'develop'
+                            changeRequest target: 'main'
+                        }
+                    }
+                    steps {
+                        container('docker') {
+                            script {
+                                // Build Docker image
+                                sh """
+                                    docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
+                                    docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest
+                                """
+                                
+                                // Trivy scan
+                                sh """
+                                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                                        -v \$(pwd):/tmp aquasec/trivy:latest image \
+                                        --format json --output /tmp/reports/trivy-scan.json \
+                                        ${DOCKER_IMAGE}:${BUILD_NUMBER} || true
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    script {
+                        // Archive security reports
+                        archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
+                        
+                        // Notify about security findings
+                        if (env.CRITICAL_ISSUES?.toInteger() > 0) {
+                            notifySlack("🔴 Critical security issues found: ${env.CRITICAL_ISSUES}", "danger")
+                        } else if (env.HIGH_ISSUES?.toInteger() > 0) {
+                            notifySlack("⚠️ High security issues found: ${env.HIGH_ISSUES}", "warning")
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                container('sonar') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh '''
+                            sonar-scanner \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.sources=src \
+                                -Dsonar.tests=tests \
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+                                -Dsonar.testExecutionReportPaths=coverage/test-reporter.xml \
+                                -Dsonar.coverage.exclusions="**/*.test.js,**/node_modules/**" \
+                                -Dsonar.cpd.exclusions="**/*.test.js" \
+                                -Dsonar.exclusions="**/node_modules/**,**/vendor/**"
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK' && !params.FORCE_DEPLOY) {
+                            error "Pipeline aborted due to quality gate failure: ${qg.status}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build & Package') {
+            steps {
+                container('docker') {
+                    script {
+                        // Build optimized Docker image
+                        sh """
+                            docker build \
+                                --build-arg NODE_ENV=${DEPLOYMENT_ENV} \
+                                --build-arg BUILD_NUMBER=${BUILD_NUMBER} \
+                                --build-arg GIT_COMMIT=${GIT_COMMIT} \
+                                -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                                -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest \
+                                .
+                        """
+                        
+                        // Push to registry
+                        if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'develop') {
+                            sh """
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${BUILD_NUMBER}
+                                docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Integration Tests') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                container('node') {
+                    script {
+                        // Start test environment
+                        sh '''
+                            docker-compose -f docker-compose.test.yml up -d
+                            sleep 30
+                        '''
+                        
+                        try {
+                            // Run integration tests
+                            sh '''
+                                npm run test:integration
+                                npm run test:api
+                            '''
+                        } finally {
+                            // Cleanup
+                            sh 'docker-compose -f docker-compose.test.yml down'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Dynamic Security Testing') {
+            when {
+                anyOf {
+                    branch 'main'
+                    changeRequest target: 'main'
+                }
+            }
+            steps {
+                container('security') {
+                    script {
+                        // OWASP ZAP baseline scan
+                        sh '''
+                            zap-baseline.py -t http://secure-code-analyzer:3000 \
+                                -J reports/zap-baseline.json \
+                                -r reports/zap-baseline.html || true
+                        '''
+                        
+                        // OWASP ZAP full scan for main branch
+                        if (env.BRANCH_NAME == 'main') {
+                            sh '''
+                                zap-full-scan.py -t http://secure-code-analyzer:3000 \
+                                    -J reports/zap-full.json \
+                                    -r reports/zap-full.html || true
+                            '''
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'reports',
+                        reportFiles: 'zap-*.html',
+                        reportName: 'OWASP ZAP Security Report'
+                    ])
+                }
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                }
+            }
+            steps {
+                container('node') {
+                    script {
+                        // Update Kubernetes manifests
+                        sh """
+                            sed -i 's|{{IMAGE_TAG}}|${BUILD_NUMBER}|g' k8s/manifests/*.yaml
+                            sed -i 's|{{ENVIRONMENT}}|${DEPLOYMENT_ENV}|g' k8s/manifests/*.yaml
+                        """
+                        
+                        // Deploy to Kubernetes
+                        sh '''
+                            kubectl apply -f k8s/manifests/ --namespace=secure-code-analyzer-${DEPLOYMENT_ENV}
+                            kubectl rollout status deployment/secure-code-analyzer --namespace=secure-code-analyzer-${DEPLOYMENT_ENV}
+                        '''
+                        
+                        // Health check
+                        sh '''
+                            sleep 60
+                            kubectl get pods --namespace=secure-code-analyzer-${DEPLOYMENT_ENV}
+                            curl -f http://secure-code-analyzer.${DEPLOYMENT_ENV}.svc.cluster.local:3000/health || exit 1
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // Archive artifacts
+                archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
+                
+                // Cleanup
+                sh 'docker system prune -f || true'
+            }
+        }
+        
+        success {
+            script {
+                notifySlack("✅ Build successful for ${env.BRANCH_NAME} - Build #${env.BUILD_NUMBER}", "good")
+                
+                // Update deployment status
+                if (env.BRANCH_NAME == 'main') {
+                    sh '''
+                        curl -X POST "${DEPLOYMENT_WEBHOOK}" \
+                            -H "Content-Type: application/json" \
+                            -d '{"status": "success", "environment": "'${DEPLOYMENT_ENV}'", "build": "'${BUILD_NUMBER}'"}'
+                    '''
+                }
+            }
+        }
+        
+        failure {
+            script {
+                notifySlack("❌ Build failed for ${env.BRANCH_NAME} - Build #${env.BUILD_NUMBER}", "danger")
+                
+                // Create Jira ticket for main branch failures
+                if (env.BRANCH_NAME == 'main') {
+                    sh '''
+                        curl -X POST "${JIRA_WEBHOOK}" \
+                            -H "Content-Type: application/json" \
+                            -d '{"project": "SEC", "summary": "Build failure in secure-code-analyzer", "priority": "High"}'
+                    '''
+                }
+            }
+        }
+        
+        unstable {
+            script {
+                notifySlack("⚠️ Build unstable for ${env.BRANCH_NAME} - Build #${env.BUILD_NUMBER}", "warning")
+            }
+        }
+    }
+}
+
+def notifySlack(message, color = "good") {
+    if (env.SLACK_WEBHOOK) {
+        sh """
+            curl -X POST "${SLACK_WEBHOOK}" \
+                -H "Content-Type: application/json" \
+                -d '{
+                    "channel": "#devsecops",
+                    "username": "Jenkins",
+                    "icon_emoji": ":jenkins:",
+                    "attachments": [{
+                        "color": "${color}",
+                        "text": "${message}",
+                        "fields": [
+                            {"title": "Project", "value": "Secure Code Analyzer", "short": true},
+                            {"title": "Branch", "value": "${env.BRANCH_NAME}", "short": true},
+                            {"title": "Build", "value": "${env.BUILD_NUMBER}", "short": true},
+                            {"title": "Commit", "value": "${env.GIT_COMMIT?.take(8)}", "short": true}
+                        ]
+                    }]
+                }'
+        """
+    }
+}

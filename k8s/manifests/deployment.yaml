@@ -1,0 +1,433 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-code-analyzer
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: api
+    version: "1.0.0"
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    description: "Main application deployment for Secure Code Analyzer"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: secure-code-analyzer
+      component: api
+  template:
+    metadata:
+      labels:
+        app: secure-code-analyzer
+        component: api
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        config-hash: "placeholder"
+    spec:
+      serviceAccountName: secure-code-analyzer
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: secure-code-analyzer
+        image: secure-code-analyzer:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: LOG_LEVEL
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: DATABASE_PORT
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: DATABASE_NAME
+        - name: DATABASE_USER
+          valueFrom:
+            secretKeyRef:
+              name: secure-code-analyzer-secrets
+              key: database-user
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: secure-code-analyzer-secrets
+              key: database-password
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: REDIS_PORT
+        - name: SONARQUBE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: secure-code-analyzer-secrets
+              key: sonarqube-token
+        - name: JENKINS_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: secure-code-analyzer-secrets
+              key: jenkins-token
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: secure-code-analyzer-secrets
+              key: jwt-secret
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+            ephemeral-storage: "1Gi"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+            ephemeral-storage: "5Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          runAsGroup: 1001
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+        volumeMounts:
+        - name: app-config
+          mountPath: /app/config
+          readOnly: true
+        - name: temp-dir
+          mountPath: /tmp
+        - name: reports-dir
+          mountPath: /app/reports
+        - name: logs-dir
+          mountPath: /app/logs
+        - name: scripts
+          mountPath: /app/scripts
+          readOnly: true
+      volumes:
+      - name: app-config
+        configMap:
+          name: secure-code-analyzer-config
+      - name: temp-dir
+        emptyDir:
+          sizeLimit: 1Gi
+      - name: reports-dir
+        emptyDir:
+          sizeLimit: 5Gi
+      - name: logs-dir
+        emptyDir:
+          sizeLimit: 2Gi
+      - name: scripts
+        configMap:
+          name: secure-code-analyzer-scripts
+          defaultMode: 0755
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - secure-code-analyzer
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - compute
+      tolerations:
+      - key: "app"
+        operator: "Equal"
+        value: "secure-code-analyzer"
+        effect: "NoSchedule"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-proxy
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: proxy
+    version: "1.0.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: secure-code-analyzer
+      component: proxy
+  template:
+    metadata:
+      labels:
+        app: secure-code-analyzer
+        component: proxy
+        version: "1.0.0"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+      containers:
+      - name: nginx
+        image: nginx:1.24-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 443
+          name: https
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 101
+          runAsGroup: 101
+          capabilities:
+            drop:
+            - ALL
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+        - name: nginx-logs
+          mountPath: /var/log/nginx
+        - name: ssl-certs
+          mountPath: /etc/ssl/certs
+          readOnly: true
+        - name: ssl-private
+          mountPath: /etc/ssl/private
+          readOnly: true
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
+      - name: nginx-logs
+        emptyDir: {}
+      - name: ssl-certs
+        secret:
+          secretName: tls-secret
+          items:
+          - key: tls.crt
+            path: server.crt
+      - name: ssl-private
+        secret:
+          secretName: tls-secret
+          items:
+          - key: tls.key
+            path: server.key
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-scanner
+  namespace: secure-code-analyzer
+  labels:
+    app: secure-code-analyzer
+    component: scanner
+    version: "1.0.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: secure-code-analyzer
+      component: scanner
+  template:
+    metadata:
+      labels:
+        app: secure-code-analyzer
+        component: scanner
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: secure-code-analyzer
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: scanner
+        image: secure-code-analyzer-scanner:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: metrics
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: SCANNER_MODE
+          value: "dedicated"
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: secure-code-analyzer-config
+              key: REDIS_PORT
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+            ephemeral-storage: "2Gi"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            ephemeral-storage: "10Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: temp-scan
+          mountPath: /tmp/scans
+        - name: reports
+          mountPath: /app/reports
+        - name: scanner-config
+          mountPath: /app/config
+          readOnly: true
+      volumes:
+      - name: temp-scan
+        emptyDir:
+          sizeLimit: 10Gi
+      - name: reports
+        emptyDir:
+          sizeLimit: 5Gi
+      - name: scanner-config
+        configMap:
+          name: secure-code-analyzer-config
