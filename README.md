@@ -67,7 +67,7 @@ An enterprise-grade DevSecOps platform that integrates security analysis, code q
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/your-username/secure-code-analyzer.git
+git clone https://github.com/sandeep-rajendiran/secure-code-analyzer.git
 cd secure-code-analyzer
 ```
 
@@ -396,9 +396,9 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 📞 Support
 
-- 📖 **Documentation**: [Wiki](https://github.com/your-username/secure-code-analyzer/wiki)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/your-username/secure-code-analyzer/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/your-username/secure-code-analyzer/discussions)
+- 📖 **Documentation**: [Wiki](https://github.com/sandeep-rajendiran/secure-code-analyzer/wiki)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/sandeep-rajendiran/secure-code-analyzer/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/sandeep-rajendiran/secure-code-analyzer/discussions)
 - 📧 **Email**: security@yourcompany.com
 
 ## 🗺️ Roadmap
